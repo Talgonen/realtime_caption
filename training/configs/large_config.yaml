@@ -1,0 +1,37 @@
+# Large-scale training configuration
+
+model:
+  clip_model_name: "ViT-L/14"
+  freeze_clip: true
+  qwen_model_name: "Qwen/Qwen2.5-1.5B"
+  freeze_qwen: true
+  insert_positions: [4, 8, 12, 16]
+  device: "cuda"
+
+training:
+  batch_size: 16
+  num_epochs: 20
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  optimizer: "adamw"
+  lr_scheduler: "cosine"
+  use_fp16: true
+  gradient_accumulation_steps: 2
+
+data:
+  train_data_path: "data/train"
+  val_data_path: "data/val"
+  max_seq_length: 512
+  num_workers: 8
+
+logging:
+  output_dir: "training/checkpoints"
+  log_dir: "training/logs"
+  log_interval: 10
+  eval_interval: 1000
+  save_total_limit: 5
+  use_tensorboard: true
+  use_wandb: true
+  wandb_project: "vision-language-model-large"
+
+seed: 42

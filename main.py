@@ -85,6 +85,42 @@ class RealtimeCaptionOverlay:
         else:
             self.status_label.config(text="Paused | SPACE: resume | ESC: quit", fg="#ffaa00")
     
+    def _slice_image(self, image, cols=8, rows=4):
+        """
+        Slice an image into a grid of equally sized rectangles.
+        
+        Args:
+            image: PIL Image to slice
+            cols: Number of columns (default 8)
+            rows: Number of rows (default 4)
+            
+        Returns:
+            List of (slice_image, position_index) tuples
+        """
+        width, height = image.size
+        slice_width = width // cols
+        slice_height = height // rows
+        
+        slices = []
+        for row in range(rows):
+            for col in range(cols):
+                left = col * slice_width
+                upper = row * slice_height
+                right = left + slice_width
+                lower = upper + slice_height
+                
+                # Handle edge cases for last row/column
+                if col == cols - 1:
+                    right = width
+                if row == rows - 1:
+                    lower = height
+                
+                slice_img = image.crop((left, upper, right, lower))
+                position_idx = row * cols + col
+                slices.append((slice_img, position_idx))
+        
+        return slices
+    
     def _capture_loop(self):
         """Continuous capture loop - runs in background thread"""
         while self.running and self.capturing:
@@ -100,19 +136,36 @@ class RealtimeCaptionOverlay:
                 self.root.after(0, self.root.deiconify)
                 
                 # Resize for faster processing (don't save)
-                max_size = (512, 384)
+                max_size = (1024, 768)
                 screenshot.thumbnail(max_size, Image.Resampling.LANCZOS)
                 
-                # Generate caption
+                # Slice image into 32 rectangles (8x4 grid)
+                slices = self._slice_image(screenshot, cols=1, rows=1)
+                
+                # Extract just the images from slices
+                slice_images = [img for img, _ in slices]
+                
+                # Generate captions for all slices using batch processing
                 start_time = time.time()
-                caption = self.model.generate_caption(screenshot)
+                captions = self.model.generate_captions_batch(slice_images)
+                
+                # Combine captions (filter out empty/duplicate ones)
+                unique_captions = []
+                seen = set()
+                for cap in captions:
+                    cap_clean = cap.strip().lower()
+                    if cap_clean and cap_clean not in seen:
+                        seen.add(cap_clean)
+                        unique_captions.append(cap.strip())
+                
+                combined_caption = " | ".join(unique_captions[:5])  # Show top 5 unique
                 elapsed = time.time() - start_time
                 
                 # Update display
                 if self.running and self.capturing:
-                    self.root.after(0, lambda c=caption: self.caption_label.config(text=c))
+                    self.root.after(0, lambda c=combined_caption: self.caption_label.config(text=c))
                     self.root.after(0, lambda t=elapsed: self.status_label.config(
-                        text=f"Updated {t:.1f}s ago | SPACE: pause | ESC: quit"
+                        text=f"Updated {t:.1f}s ago (32 slices) | SPACE: pause | ESC: quit"
                     ))
                 
                 # Wait remaining time to hit ~1 second interval

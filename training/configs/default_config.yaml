@@ -1,0 +1,83 @@
+# Training Configuration for Hybrid Vision-Language Model
+
+# Model architecture
+model:
+  clip_model_name: "openai/clip-vit-base-patch32"
+  qwen_model_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  insert_positions: [20, 21, 22, 23, 24]
+  
+# Training hyperparameters
+training:
+  batch_size: 8
+  num_epochs: 1000
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_steps: 500
+  max_grad_norm: 1.0
+  
+  # Optimizer settings
+  optimizer: "adamw"  # adamw, adam, sgd
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  
+  # Learning rate scheduler
+  lr_scheduler: "constant"  # cosine, linear, constant
+  
+  # Generation settings
+  max_generation_length: 100
+  temperature: 0.7
+  top_p: 0.9
+  
+  # Mixed precision training
+  use_fp16: true
+  
+  # Gradient accumulation
+  gradient_accumulation_steps: 1
+
+# Data configuration
+data:
+  # Dataset paths
+  train_data_path: "data/train"
+  val_data_path: "data/val"
+  test_data_path: "data/test"
+  
+  # Data processing
+  max_seq_length: 512
+  image_size: 224
+  
+  # DataLoader settings
+  num_workers: 0
+  prefetch_factor: 0
+  pin_memory: true
+  
+  # Data augmentation
+  use_augmentation: true
+
+# Logging and checkpointing
+logging:
+  # Paths
+  output_dir: "training/checkpoints"
+  log_dir: "training/logs"
+  
+  # Logging frequency
+  log_interval: 1  # Log every N steps
+  eval_interval: 0.25  # Evaluate every N steps (values < 1.0 = fraction of epoch, >= 1.0 = number of steps)
+  
+  # Checkpointing
+  save_total_limit: 3  # Keep only last N checkpoints
+  save_best_only: true
+  
+  # Weights & Biases / TensorBoard
+  use_wandb: false
+  wandb_project: "vision-language-model"
+  wandb_run_name: null
+  
+  use_tensorboard: true
+  
+  # Evaluation
+  generate_samples: true
+  num_eval_samples: 5
+
+# Reproducibility
+seed: 42
