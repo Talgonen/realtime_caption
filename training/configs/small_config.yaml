@@ -1,0 +1,39 @@
+# Small-scale training configuration
+
+model:
+  clip_model_name: "ViT-B/32"
+  freeze_clip: true
+  qwen_model_name: "Qwen/Qwen2.5-0.5B"
+  freeze_qwen: true
+  insert_positions: [2]
+  device: "cuda"
+
+training:
+  batch_size: 4
+  num_epochs: 5
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  optimizer: "adamw"
+  lr_scheduler: "cosine"
+  use_fp16: true
+
+data:
+  cache_dir: "./data/coco_cache"
+  download_images: true
+  max_samples: 1000  # Small subset for quick testing
+  train_data_path: "data/train"
+  val_data_path: "data/val"
+  max_seq_length: 512
+  image_size: 224
+  num_workers: 2
+  pin_memory: true
+
+logging:
+  output_dir: "training/checkpoints"
+  log_dir: "training/logs"
+  log_interval: 10
+  eval_interval: 500
+  use_tensorboard: true
+  generate_samples: true
+
+seed: 42

@@ -5,12 +5,47 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "Train model",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "module": "training.train",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--config", "training/configs/default_config.yaml"
+            ]
+        },
+        {
+            "name": "Test model",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "test_model",
             "console": "integratedTerminal",
             "justMyCode": false
+        },
+        {
+            "name": "Example usage",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "test",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_DATASETS_OFFLINE": "1"
+            }
+        },
+        {
+            "name": "Generate caption",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "generate_caption",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_DATASETS_OFFLINE": "1"
+            }
         }
     ]
 }
