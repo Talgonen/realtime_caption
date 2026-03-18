@@ -1,6 +1,11 @@
-# Training Setup for Hybrid Vision-Language Model
+# Training Setup for RTVTLM
 
-This folder contains the complete setup for training a hybrid vision-language model that combines:
+> **📘 Note**: For overall project vision, architecture, and roadmap, see the [main README](../README.md).
+> This document focuses specifically on training the model.
+
+## Overview
+
+This folder contains the training infrastructure for RTVTLM (Real-Time Vision to Language Model), which combines:
 - **Frozen CLIP** (vision encoder)
 - **Frozen Qwen2.5-0.5B** (language model)
 - **Trainable intermediate layers** inserted between transformer blocks
