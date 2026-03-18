@@ -164,8 +164,12 @@ def check_image_to_text_model(prompt):
     _ = model.generate(pixel_values=image_input.pixel_values, input_ids=dummy["input_ids"], attention_mask=dummy["attention_mask"], max_new_tokens=5, pad_token_id=tokenizer.eos_token_id)
     
     # Tokenize input
-    inputs = tokenizer([prompt]*32, return_tensors="pt").to(device)
-    image_input = processor([image]*32, return_tensors="pt", padding=True).to(device)
+    if len(prompt) > 0:
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    else:
+        inputs = tokenizer("A", return_tensors="pt", add_special_tokens=True).to(device)
+        inputs['attention_mask'] = torch.zeros_like(inputs['input_ids'])
+    image_input = processor(image, return_tensors="pt", padding=True).to(device)
     
     # Generate text
     print("Generating...")
@@ -181,10 +185,7 @@ def check_image_to_text_model(prompt):
             pixel_values=image_input.pixel_values,
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
-            max_new_tokens=20,
-            do_sample=False,
-            use_cache=True,
-            pad_token_id=tokenizer.eos_token_id
+            do_sample=True,
         )
     prof.export_chrome_trace("trace.json")
     generation_time = time.time() - start_time
@@ -200,7 +201,7 @@ def check_image_to_text_model(prompt):
 
 if __name__ == "__main__":
     # Example usage - replace with your image path
-    image_path = "exmaple.png"
+    image_path = "COCO_val2014_000000403013.jpg"
     # check_image_model(image_path)
     # check_text_model("Describe a beautiful sunset over the mountains.")
-    check_image_to_text_model("Describe a beautiful sunset over the mountains.")
+    check_image_to_text_model("A narrow ")

@@ -10,34 +10,43 @@ from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from torchvision import transforms
 
 import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from model.lightning_RTVLTM import LightningRTVTLM
 from training.configs.config import load_config, load_default_config
+from dataset.COCO import COCOKarpathyDataset, COCOKarpathyDatasetWithTokenizer
+from transformers import AutoTokenizer, CLIPProcessor
 
 
-class DummyDataset(Dataset):
-    """Dummy dataset for testing. Replace with your actual dataset."""
-    
-    def __init__(self, size=100):
-        self.size = size
-    
-    def __len__(self):
-        return self.size
-    
-    def __getitem__(self, idx):
-        # Replace this with actual image loading and preprocessing
-        image = torch.randn(3, 224, 224)
-        text = "This is a sample caption for the image."
-        return image, text
-
-
-def create_dataloader(config, split: str) -> DataLoader:
+def create_dataloader(config, max_samples, split: str, tokenizer=None, vision_processor=None) -> DataLoader:
     """Create dataloader for the specified split."""
-    # TODO: Replace with actual dataset implementation
-    dataset = DummyDataset(size=100 if split == "train" else 20)
+    # Get cache directory and max samples
+    cache_dir = config['data'].get('cache_dir', './data/coco_cache')
+    download_images = config['data'].get('download_images', True)
+    max_seq_length = config['data'].get('max_seq_length', 512)
+    
+    # Create dataset with tokenizer for pre-tokenization
+    dataset = COCOKarpathyDatasetWithTokenizer(
+        split=split,
+        transform=lambda images: vision_processor(images=images, return_tensors="pt").pixel_values,
+        tokenizer=tokenizer,
+        max_length=max_seq_length,
+        max_samples=max_samples,
+        cache_dir=cache_dir,
+        download_images=download_images
+    )
+    
+    # Custom collate function to handle batch data with vision processing
+    def collate_fn(batch):
+        # Extract PIL images (not transformed yet)
+        pixel_values = torch.concat([item['image'] for item in batch], dim=0)
+        input_ids = torch.stack([item['input_ids'] for item in batch])
+        attention_mask = torch.stack([item['attention_mask'] for item in batch])
+        caption_texts = [item['caption_text'] for item in batch]
+        return input_ids, attention_mask, pixel_values, caption_texts
     
     num_workers = config['data'].get('num_workers', 4)
     
@@ -47,7 +56,8 @@ def create_dataloader(config, split: str) -> DataLoader:
         shuffle=(split == "train"),
         num_workers=num_workers,
         pin_memory=config['data'].get('pin_memory', True),
-        persistent_workers=True if num_workers > 0 else False
+        persistent_workers=True if num_workers > 0 else False,
+        collate_fn=collate_fn
     )
 
 
@@ -152,10 +162,18 @@ def main():
         max_seq_length=config['data'].get('max_seq_length', 512)
     )
     
-    # Create dataloaders
+    # Initialize tokenizer for dataset
+    print("Initializing tokenizer for dataset...")
+    tokenizer = model.language_tokenizer
+    
+    # Initialize vision processor for image preprocessing
+    print("Initializing vision processor...")
+    vision_processor = CLIPProcessor.from_pretrained(config['model']['clip_model_name'], local_files_only=True)
+    
+    # Create dataloaders with tokenizer and vision_processor
     print("Creating dataloaders...")
-    train_loader = create_dataloader(config, "train")
-    val_loader = create_dataloader(config, "val")
+    train_loader = create_dataloader(config, config['data']['train_samples'], "train", tokenizer, vision_processor)
+    val_loader = create_dataloader(config, config['data']['val_samples'], "validation", tokenizer, vision_processor)
     
     # Setup callbacks and loggers
     callbacks = setup_callbacks(config)
@@ -172,12 +190,13 @@ def main():
     trainer = pl.Trainer(
         max_epochs=config['training']['num_epochs'],
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,  # Use single GPU to avoid multi-GPU issues
+        devices=1,
         precision="16-mixed" if config['training'].get('use_fp16', True) else 32,
         callbacks=callbacks,
         logger=loggers,
         log_every_n_steps=config['logging'].get('log_interval', 10),
         val_check_interval=val_check_interval,
+        # check_val_every_n_epoch=50,
         accumulate_grad_batches=config['training'].get('gradient_accumulation_steps', 1),
         gradient_clip_val=config['training'].get('max_grad_norm', 1.0),
         deterministic=True,

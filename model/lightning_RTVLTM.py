@@ -42,12 +42,20 @@ class LightningRTVTLM(pl.LightningModule):
         )
 
         for name, param in self.model.named_parameters():
-            if "model.adapters" in name:
+            if any(filter(lambda param_name: param_name in name, ["model.adapters"])):
                 param.requires_grad = True
             else:
                 param.requires_grad = False
 
         self.language_tokenizer = AutoTokenizer.from_pretrained(qwen_model_name, local_files_only=True)
+        
+        # Ensure tokenizer has pad_token set (use eos_token if not available)
+        if self.language_tokenizer.pad_token is None:
+            self.language_tokenizer.pad_token = self.language_tokenizer.eos_token
+            self.language_tokenizer.pad_token_id = self.language_tokenizer.eos_token_id
+        self.language_tokenizer.bos_token = self.language_tokenizer.special_tokens_map['additional_special_tokens'][0]
+        self.language_tokenizer.bos_token_id = self.language_tokenizer.convert_tokens_to_ids(self.language_tokenizer.bos_token)
+        
         self.vision_processor = CLIPProcessor.from_pretrained(clip_model_name, local_files_only=True, use_fast=True)
         
         # Store training parameters
@@ -67,75 +75,83 @@ class LightningRTVTLM(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         """Training step."""
-        images, texts = batch
-        loss = self.loss_fn(images, texts, batch_idx)
+        input_ids, attention_mask, pixel_values, caption_texts = batch
+        loss = self.loss_fn(input_ids, attention_mask, pixel_values, batch_idx)
         
         # Log metrics
-        self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log('train/lr', self.trainer.optimizers[0].param_groups[0]['lr'], on_step=True, logger=True)
+        self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True, logger=True, batch_size=len(pixel_values))
+        self.log('train/lr', self.trainer.optimizers[0].param_groups[0]['lr'], on_step=True, logger=True, batch_size=len(pixel_values))
         
         return loss
     
     def validation_step(self, batch, batch_idx):
         """Validation step."""
-        images, texts = batch
-        loss = self.loss_fn(images, texts, batch_idx)
+        input_ids, attention_mask, pixel_values, caption_texts = batch
+        loss = self.loss_fn(input_ids, attention_mask, pixel_values, batch_idx)
         
-        # Log metrics
-        self.log('val/loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # Log metrics with explicit batch_size
+        self.log('val/loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, batch_size=len(pixel_values))
         
         # Generate sample captions on first batch
         if self.verbose and batch_idx == 0:
-            self._generate_samples(images[:2], texts[:2])
+            self._generate_samples(pixel_values[:2], caption_texts[:2])
         
         return loss
     
     def test_step(self, batch, batch_idx):
         """Test step."""
-        images, texts = batch
-        loss = self.loss_fn(images, texts, batch_idx)
+        input_ids, attention_mask, pixel_values, caption_texts = batch
+        loss = self.loss_fn(input_ids, attention_mask, pixel_values, batch_idx)
 
-        # Log metrics
-        self.log('val/loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # Log metrics with explicit batch_size
+        self.log('test/loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, batch_size=len(pixel_values))
         
         # Generate sample captions on first batch
         if self.verbose and batch_idx == 0:
-            self._generate_samples(images[:2], texts[:2])
+            self._generate_samples(pixel_values[:2], caption_texts[:2])
         
         return loss
     
-    def loss_fn(self, images, texts, _):
-        inputs = self.language_tokenizer(
-            texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.hparams.get('max_seq_length', 512)
-        ).to(self.device)
+    def loss_fn(self, input_ids, attention_mask, pixel_values, _):
+        # Move pre-tokenized inputs and processed pixel_values to device
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+        pixel_values = pixel_values.to(self.device)
         
-        # Process images and move to device
-        pixel_values = self.vision_processor(images=images, return_tensors="pt").pixel_values.to(self.device)
+        # Encode vision features
         vision_features = self.model.encode_vision(pixel_values)
         
         # Forward pass
         outputs = self(
             vision_features=vision_features,
-            input_ids=inputs.input_ids,
-            attention_mask=inputs.attention_mask,
-            labels=inputs.input_ids
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=input_ids
         )
         
         return outputs.loss
     
-    def _generate_samples(self, images, texts):
+    def _generate_samples(self, pixel_values_batch, texts):
         """Generate sample captions for logging."""
         with torch.no_grad():
-            for i, (image, text) in enumerate(zip(images, texts)):
+            for i, (pixel_values, text) in enumerate(zip(pixel_values_batch, texts)):
+                # input_ids = self.language_tokenizer(self.language_tokenizer.bos_token, return_tensors="pt").input_ids.to(self.device)
+
+                # pixel_values already processed, just add batch dimension if needed
+                if pixel_values.dim() == 3:  # (C, H, W)
+                    pixel_values = pixel_values.unsqueeze(0).to(self.device)  # (1, C, H, W)
+                else:
+                    pixel_values = pixel_values.to(self.device)
+                
+                # Generate with proper configuration
                 generated_text = self.model.generate(
-                    pixel_values=self.vision_processor(images=image, return_tensors="pt").pixel_values.to(self.device),
-                    max_length=self.max_generation_length,
-                    temperature=self.temperature,
-                    top_p=self.top_p
+                    pixel_values=pixel_values,
+                    max_new_tokens=self.max_generation_length,
+                    pad_token_id=self.language_tokenizer.pad_token_id,
+                    eos_token_id=self.language_tokenizer.eos_token_id,
+                    bos_token_id=self.language_tokenizer.bos_token_id,
+                    do_sample=False,
+                    num_beams=1
                 )
 
                 generated_text = self.language_tokenizer.decode(generated_text[0], skip_special_tokens=True)

@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 
 import torch
 from torch import nn
-from transformers import CLIPConfig, CLIPVisionModel, CLIPVisionConfig, Qwen2Model, Qwen2ForCausalLM, Qwen2Config, Qwen2PreTrainedModel
+from transformers import CLIPConfig, CLIPVisionModel, CLIPVisionConfig, Qwen2Model, Qwen2ForCausalLM, Qwen2Config
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.masking_utils import create_causal_mask, create_sliding_window_causal_mask
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
@@ -214,13 +214,14 @@ class RTVTLMForCausalLM(Qwen2ForCausalLM):
         with torch.no_grad():
             return self.vision_embedder(pixel_values).last_hidden_state
 
-    def generate(self, input_ids=None, pixel_values = None, **kwargs):
+    def generate(self, input_ids=None, pixel_values = None, attention_mask=None, **kwargs):
         vision_features = self.encode_vision(pixel_values)
         
         # Call parent generate with embeddings
         return super().generate(
             vision_features=vision_features,
             input_ids=input_ids,
+            attention_mask=attention_mask,
             **kwargs
         )
 

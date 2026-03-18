@@ -4,13 +4,13 @@
 model:
   clip_model_name: "openai/clip-vit-base-patch32"
   qwen_model_name: "Qwen/Qwen2.5-0.5B-Instruct"
-  insert_positions: [20, 21, 22, 23, 24]
+  insert_positions: [15, 17, 19, 21, 23]
   
 # Training hyperparameters
 training:
-  batch_size: 8
+  batch_size: 4  # Reduced from 32 for 6GB GPU
   num_epochs: 1000
-  learning_rate: 1.0e-4
+  learning_rate: 2.0e-3
   weight_decay: 0.01
   warmup_steps: 500
   max_grad_norm: 1.0
@@ -33,11 +33,17 @@ training:
   use_fp16: true
   
   # Gradient accumulation
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 16  # Increased to maintain effective batch size of 32
 
 # Data configuration
 data:
-  # Dataset paths
+  # COCO Dataset settings
+  cache_dir: "./data/coco_cache"  # Directory to cache downloaded images
+  download_images: true  # Download images from URLs
+  train_samples: 75000  # Limit dataset size (null = use all samples)
+  val_samples: 20  # Limit dataset size (null = use all samples)
+  
+  # Dataset paths (legacy - kept for compatibility)
   train_data_path: "data/train"
   val_data_path: "data/val"
   test_data_path: "data/test"
@@ -48,7 +54,7 @@ data:
   
   # DataLoader settings
   num_workers: 0
-  prefetch_factor: 0
+  prefetch_factor: 2  # Prefetch batches per worker (0 disables prefetching, 2 is recommended)
   pin_memory: true
   
   # Data augmentation
@@ -62,7 +68,7 @@ logging:
   
   # Logging frequency
   log_interval: 1  # Log every N steps
-  eval_interval: 0.25  # Evaluate every N steps (values < 1.0 = fraction of epoch, >= 1.0 = number of steps)
+  eval_interval: 0.1  # Evaluate every N steps (values < 1.0 = fraction of epoch, >= 1.0 = number of steps)
   
   # Checkpointing
   save_total_limit: 3  # Keep only last N checkpoints
